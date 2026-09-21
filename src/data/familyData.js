@@ -4,7 +4,7 @@ export const familyMembers = [
     id: 'ron',
     name: 'Ron Hart',
     birth: '',
-    spouseId: 'jan',
+    spouseIds: ['jan'],
     parentIds: [],
     notes: 'Patriarch of the Hart family.'
   },
@@ -12,7 +12,7 @@ export const familyMembers = [
     id: 'jan',
     name: 'Jan Hart',
     birth: '',
-    spouseId: 'ron',
+    spouseIds: ['ron'],
     parentIds: [],
     notes: 'Matriarch of the Hart family.'
   },
@@ -22,7 +22,7 @@ export const familyMembers = [
     id: 'sarah',
     name: 'Sarah Hart Greene',
     birth: '04/13/1989',
-    spouseId: 'jessie',
+    spouseIds: ['jessie'],
     parentIds: ['ron', 'jan'],
     notes: 'Oldest child of Ron and Jan.'
   },
@@ -30,7 +30,7 @@ export const familyMembers = [
     id: 'laura',
     name: 'Laura Hart Telepak',
     birth: '09/29/1990',
-    spouseId: 'john',
+    spouseIds: ['john'],
     parentIds: ['ron', 'jan'],
     notes: 'Second child of Ron and Jan.'
   },
@@ -38,7 +38,7 @@ export const familyMembers = [
     id: 'amy',
     name: 'Amy Lianna Hart',
     birth: '03/23/1992',
-    spouseId: null,
+    spouseIds: [],
     parentIds: ['ron', 'jan'],
     notes: 'Third child of Ron and Jan.'
   },
@@ -46,7 +46,7 @@ export const familyMembers = [
     id: 'tim',
     name: 'Timothy Ronald Hart',
     birth: '06/19/1995',
-    spouseId: 'ashley',
+    spouseIds: ['ashley'],
     parentIds: ['ron', 'jan'],
     notes: 'Fourth child of Ron and Jan.'
   },
@@ -54,7 +54,7 @@ export const familyMembers = [
     id: 'peter',
     name: 'Peter James Hart',
     birth: '05/01/1999',
-    spouseId: 'hayley',
+    spouseIds: ['hayley'],
     parentIds: ['ron', 'jan'],
     notes: 'Youngest child of Ron and Jan.'
   },
@@ -64,7 +64,7 @@ export const familyMembers = [
     id: 'jessie',
     name: 'Jessie Caleb Greene',
     birth: '',
-    spouseId: 'sarah',
+    spouseIds: ['sarah'],
     parentIds: [],
     notes: 'Spouse of Sarah.'
   },
@@ -72,7 +72,7 @@ export const familyMembers = [
     id: 'john',
     name: 'John Telepak',
     birth: '',
-    spouseId: 'laura',
+    spouseIds: ['laura'],
     parentIds: [],
     notes: 'Spouse of Laura.'
   },
@@ -80,7 +80,7 @@ export const familyMembers = [
     id: 'ashley',
     name: 'Ashley Henderson Hart',
     birth: '',
-    spouseId: 'tim',
+    spouseIds: ['tim'],
     parentIds: [],
     notes: 'Spouse of Tim.'
   },
@@ -88,7 +88,7 @@ export const familyMembers = [
     id: 'hayley',
     name: 'Hayley Ann Venman Hart',
     birth: '',
-    spouseId: 'peter',
+    spouseIds: ['peter'],
     parentIds: [],
     notes: 'Spouse of Peter.'
   },
@@ -98,7 +98,7 @@ export const familyMembers = [
     id: 'roman',
     name: 'Roman Greene',
     birth: '',
-    spouseId: null,
+    spouseIds: [],
     parentIds: ['sarah', 'jessie'],
     notes: ''
   },
@@ -106,7 +106,7 @@ export const familyMembers = [
     id: 'ella',
     name: 'Eleanor Greene',
     birth: '',
-    spouseId: null,
+    spouseIds: [],
     parentIds: ['sarah', 'jessie'],
     notes: ''
   },
@@ -114,7 +114,7 @@ export const familyMembers = [
     id: 'penelope',
     name: 'Penelope Greene',
     birth: '',
-    spouseId: null,
+    spouseIds: [],
     parentIds: ['sarah', 'jessie'],
     notes: ''
   },
@@ -122,7 +122,7 @@ export const familyMembers = [
     id: 'genevieve',
     name: 'Genevieve Greene',
     birth: '',
-    spouseId: null,
+    spouseIds: [],
     parentIds: ['sarah', 'jessie'],
     notes: ''
   },
@@ -132,7 +132,7 @@ export const familyMembers = [
     id: 'archer',
     name: 'Archer Edward Telepak',
     birth: '',
-    spouseId: null,
+    spouseIds: [],
     parentIds: ['laura', 'john'],
     notes: ''
   },
@@ -140,7 +140,7 @@ export const familyMembers = [
     id: 'george',
     name: 'George Albert Telepak',
     birth: '',
-    spouseId: null,
+    spouseIds: [],
     parentIds: ['laura', 'john'],
     notes: ''
   }

@@ -1,4 +1,6 @@
 <script setup>
+import unknownAvatar from '../assets/unknown.webp'
+
 defineOptions({ name: 'FamilyGroup' })
 
 defineProps({
@@ -25,7 +27,7 @@ defineEmits(['select'])
         :data-id="parent.id"
         :class="{ active: parent.id === selectedId }"
         @click="$emit('select', parent)">
-        <img class="node-avatar" :src="parent.image || '/favicon.svg'" :alt="parent.name + ' avatar'" />
+        <img class="node-avatar" :src="parent.image || unknownAvatar" :alt="parent.name + ' avatar'" />
         <div class="node-text">
           <span class="node-name">{{ parent.name }}</span>
           <span class="node-birth">{{ parent.birth }}</span>
@@ -66,8 +68,10 @@ defineEmits(['select'])
   flex-wrap: nowrap;
 }
 .family-node {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0), rgba(255, 255, 255, 0)),
+    url('../assets/leaveNoBG.jpg') center/cover no-repeat;
+  border: 1px solid transparent;
   padding: 16px 14px;
   border-radius: 8px;
   cursor: pointer;
@@ -83,12 +87,12 @@ defineEmits(['select'])
   box-sizing: border-box;
 }
 .family-node.active {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25), 0 6px 18px rgba(0, 0, 0, 0.08);
+  border-color: #e70808;
+  box-shadow: 0 0 0 3px #f70202, 0 6px 18px rgba(0, 0, 0, 0.08);
 }
 .node-avatar {
-  width: 48px;
-  height: 48px;
+  width: 100px;
+  height: 100px;
   border-radius: 50%;
   object-fit: cover;
   background: #f3f4f6;
@@ -97,13 +101,18 @@ defineEmits(['select'])
   display: grid;
   gap: 4px;
   justify-items: center;
+  color: black !important;
+  background: rgba(255, 255, 255, 0.65);
+  border-radius: 6px;
+  padding: 6px 10px;
 }
 .node-name {
-  font-weight: 600;
+  font-weight: 650;
   display: block;
+  color:black;
 }
 .node-birth {
-  color: #6b7280;
+  color: black;
   font-size: 0.95rem;
 }
 </style>

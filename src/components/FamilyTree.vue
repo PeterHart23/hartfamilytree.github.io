@@ -4,10 +4,13 @@ import PersonCard from './PersonCard.vue'
 import FamilyGroup from './FamilyGroup.vue'
 import AdminBar from './AdminBar.vue'
 import PersonFormModal from './PersonFormModal.vue'
-import { members as familyMembers, updatePerson, addPartner, addSibling, addChild, addParents, exportMembersJson } from '../store/familyStore'
+import { members as familyMembers, isLoading, loadError, updatePerson, addPartner, addSibling, addChild, addParents, deletePerson } from '../store/familyStore'
+import { deleteAvatar } from '../lib/avatarStorage'
+import branchImage from '../assets/branch.webp'
 
-const selectedId = ref(familyMembers[0]?.id || null)
+const selectedId = ref(null)
 const sidebarOpen = ref(true)
+const sidebarVisible = computed(() => !!(selectedId.value && sidebarOpen.value))
 
 const membersById = computed(() => {
   return familyMembers.reduce((map, member) => {
@@ -29,10 +32,14 @@ const childrenMap = computed(() => {
 })
 
 const rootMembers = computed(() => {
+  // Anyone whose spouse cluster includes a blood relative (someone with
+  // recorded parents) gets rendered alongside that relative instead of as
+  // their own independent root, however many marriages away they are. This
+  // must not depend on array order — Supabase doesn't guarantee row order.
   return familyMembers.filter(member => {
     if (member.parentIds.length > 0) return false
-    const spouse = membersById.value[member.spouseId]
-    return !spouse || spouse.parentIds.length === 0
+    const cluster = getSpouseCluster(member.id)
+    return cluster.every(cid => membersById.value[cid].parentIds.length === 0)
   })
 })
 
@@ -41,39 +48,69 @@ const birthTimestamp = member => {
   return Number.isFinite(date.getTime()) ? date.getTime() : 0
 }
 
-// Build a proper tree: each node represents a couple/single with their own
-// children nested beneath them, so nobody is ever rendered more than once.
-function buildGroups(memberIds) {
+// Every person connected to startId via spouseIds, however many hops away
+// (e.g. a blood relative's spouse, and that spouse's other partner). They
+// all need to render together in one group.
+function getSpouseCluster(startId) {
+  const cluster = new Set([startId])
+  const queue = [startId]
+  while (queue.length) {
+    const current = membersById.value[queue.shift()]
+    if (!current) continue
+    current.spouseIds.forEach(sid => {
+      if (!cluster.has(sid) && membersById.value[sid]) {
+        cluster.add(sid)
+        queue.push(sid)
+      }
+    })
+  }
+  return [...cluster]
+}
+
+function dedupeById(list) {
+  const seen = new Set()
+  return list.filter(item => (seen.has(item.id) ? false : seen.add(item.id)))
+}
+
+// Build a proper tree: each node represents a couple/single (or a cluster of
+// partners, all shown in the same row) with their own children nested
+// beneath them. `processed` is shared across every recursive call so a
+// person already placed in one group (e.g. an in-law claimed by their
+// blood-relative spouse's branch) never spawns a duplicate branch elsewhere.
+function buildGroups(memberIds, processed) {
   const groups = []
-  const processed = new Set()
 
   memberIds.forEach(id => {
     if (processed.has(id)) return
     const member = membersById.value[id]
     if (!member) return
 
-    const spouse = membersById.value[member.spouseId]
-    let parents
-    let coupleIds
+    const clusterIds = getSpouseCluster(id)
+    clusterIds.forEach(cid => processed.add(cid))
+    const clusterMembers = clusterIds.map(cid => membersById.value[cid])
 
-    if (spouse) {
-      parents = member.id < spouse.id ? [member, spouse] : [spouse, member]
-      coupleIds = [member.id, spouse.id]
+    // With 3+ partners, sandwich the shared hub between them instead of
+    // sorting everyone alphabetically — otherwise the hub can end up off to
+    // one side, and the connector line to the far partner visually cuts
+    // through the near partner's card, making it look like the two partners
+    // are paired with each other instead of with the shared hub.
+    let parents
+    if (clusterMembers.length <= 2) {
+      parents = clusterIds.slice().sort().map(cid => membersById.value[cid])
     } else {
-      parents = [member]
-      coupleIds = [member.id]
+      const hub = clusterMembers.reduce((best, m) => (m.spouseIds.length > best.spouseIds.length ? m : best))
+      const others = clusterMembers.filter(m => m.id !== hub.id).sort((a, b) => (a.id < b.id ? -1 : 1))
+      const mid = Math.ceil(others.length / 2)
+      parents = [...others.slice(0, mid), hub, ...others.slice(mid)]
     }
 
-    coupleIds.forEach(cid => processed.add(cid))
-
-    const childMembers = (childrenMap.value[member.id] || [])
-      .slice()
+    const childMembers = dedupeById(clusterIds.flatMap(cid => childrenMap.value[cid] || []))
       .sort((a, b) => birthTimestamp(a) - birthTimestamp(b))
     const childIds = childMembers.map(child => child.id)
-    const childGroups = childIds.length ? buildGroups(childIds) : []
+    const childGroups = childIds.length ? buildGroups(childIds, processed) : []
 
     groups.push({
-      key: coupleIds.slice().sort().join('::'),
+      key: clusterIds.slice().sort().join('::'),
       parents,
       childGroups
     })
@@ -82,12 +119,10 @@ function buildGroups(memberIds) {
   return groups
 }
 
-const familyTree = computed(() => buildGroups(rootMembers.value.map(m => m.id)))
+const familyTree = computed(() => buildGroups(rootMembers.value.map(m => m.id), new Set()))
 
 const selectedPerson = computed(() => membersById.value[selectedId.value] || familyMembers[0])
-const selectedParents = computed(() => selectedPerson.value.parentIds.map(id => membersById.value[id]).filter(Boolean))
-const selectedChildren = computed(() => childrenMap.value[selectedPerson.value.id] || [])
-const selectedSpouse = computed(() => membersById.value[selectedPerson.value.spouseId] || null)
+const selectedSpouses = computed(() => selectedPerson.value.spouseIds.map(sid => membersById.value[sid]).filter(Boolean))
 
 function selectPerson(person) {
   if (selectedId.value === person.id) {
@@ -103,57 +138,68 @@ function closePerson() {
 }
 
 const activeModal = ref(null)
-const showExport = ref(false)
-const exportCopied = ref(false)
+const savingModal = ref(false)
+const saveError = ref('')
 
 function handleAdminAction(action) {
-  if (action === 'export') {
-    showExport.value = true
+  if (!selectedId.value) return
+  if (action === 'delete-person') {
+    handleDeletePerson()
     return
   }
-  if (!selectedId.value) return
   activeModal.value = action
+}
+
+async function handleDeletePerson() {
+  const person = selectedPerson.value
+  if (!person) return
+  if (!window.confirm(`Delete ${person.name}? This cannot be undone.`)) return
+
+  try {
+    await deletePerson(person.id)
+    selectedId.value = familyMembers.length ? familyMembers[0].id : null
+    sidebarOpen.value = false
+  } catch (err) {
+    window.alert(err.message || 'Something went wrong deleting from the database.')
+    console.error(err)
+  }
 }
 
 function closeModal() {
   activeModal.value = null
+  saveError.value = ''
 }
 
-function handleModalSubmit(payload) {
+async function handleModalSubmit(payload) {
   const personId = selectedPerson.value.id
-  switch (activeModal.value) {
-    case 'edit-person':
-      updatePerson(personId, payload.data)
-      break
-    case 'add-partner':
-      addPartner(personId, payload.data)
-      break
-    case 'add-sibling':
-      addSibling(personId, payload.data)
-      break
-    case 'add-child':
-      addChild(personId, payload.data, { includeSpouse: payload.includeSpouse })
-      break
-    case 'add-parents':
-      addParents(personId, payload.parents)
-      break
-  }
-  activeModal.value = null
-}
-
-async function copyExport() {
+  savingModal.value = true
+  saveError.value = ''
   try {
-    await navigator.clipboard.writeText(exportMembersJson())
-    exportCopied.value = true
-    setTimeout(() => (exportCopied.value = false), 2000)
+    switch (activeModal.value) {
+      case 'edit-person':
+        await updatePerson(personId, payload.data)
+        break
+      case 'add-partner':
+        await addPartner(personId, payload.data)
+        break
+      case 'add-sibling':
+        await addSibling(personId, payload.data)
+        break
+      case 'add-child':
+        await addChild(personId, payload.data, { spouseId: payload.spouseId })
+        break
+      case 'add-parents':
+        await addParents(personId, payload.parents)
+        break
+    }
+    if (payload.oldImagePath) await deleteAvatar(payload.oldImagePath)
+    activeModal.value = null
   } catch (err) {
-    console.warn('Copy to clipboard failed.', err)
+    saveError.value = err.message || 'Something went wrong saving to the database.'
+    console.error(err)
+  } finally {
+    savingModal.value = false
   }
-}
-
-function closeExport() {
-  showExport.value = false
-  exportCopied.value = false
 }
 
 const zoom = ref(1)
@@ -174,6 +220,7 @@ function resetZoom() {
   zoom.value = 1
   panX.value = 0
   panY.value = 0
+  nextTick(() => centerRootHorizontally())
 }
 
 // Keep the point under the cursor fixed on screen while zooming: work out
@@ -216,26 +263,29 @@ function handleWheelZoom(event) {
 
 // Click-and-drag panning of the chart. A small movement threshold keeps
 // plain clicks on person cards working as selections rather than drags.
+// Tracked via window listeners (not setPointerCapture) because pointer
+// capture retargets the resulting click event to the capturing element,
+// which breaks click handlers on nested cards.
 const isPanning = ref(false)
 const dragMoved = ref(false)
 const DRAG_THRESHOLD = 4
 const dragStart = { x: 0, y: 0 }
 const panOrigin = { x: 0, y: 0 }
-let activePointerId = null
 
 function onChartPointerDown(event) {
   if (event.button !== 0) return
   isPanning.value = true
   dragMoved.value = false
-  activePointerId = event.pointerId
   dragStart.x = event.clientX
   dragStart.y = event.clientY
   panOrigin.x = panX.value
   panOrigin.y = panY.value
-  event.currentTarget.setPointerCapture(event.pointerId)
+  window.addEventListener('pointermove', onWindowPointerMove)
+  window.addEventListener('pointerup', onWindowPointerUp)
+  window.addEventListener('pointercancel', onWindowPointerUp)
 }
 
-function onChartPointerMove(event) {
+function onWindowPointerMove(event) {
   if (!isPanning.value) return
   const dx = event.clientX - dragStart.x
   const dy = event.clientY - dragStart.y
@@ -246,13 +296,11 @@ function onChartPointerMove(event) {
   panY.value = panOrigin.y + dy
 }
 
-function onChartPointerUp(event) {
-  if (!isPanning.value) return
+function onWindowPointerUp() {
   isPanning.value = false
-  if (activePointerId !== null && event.currentTarget.hasPointerCapture?.(activePointerId)) {
-    event.currentTarget.releasePointerCapture(activePointerId)
-  }
-  activePointerId = null
+  window.removeEventListener('pointermove', onWindowPointerMove)
+  window.removeEventListener('pointerup', onWindowPointerUp)
+  window.removeEventListener('pointercancel', onWindowPointerUp)
 }
 
 // Suppress the click that follows a drag so it doesn't select a person.
@@ -301,20 +349,21 @@ function computeConnections() {
 
   // Spouse connections (horizontal)
   familyMembers.forEach(m => {
-    const sid = m.spouseId
-    if (sid && byId[m.id] && byId[sid]) {
-      const a = byId[m.id]
-      const b = byId[sid]
-      if (m.id < sid) {
-        // Use average Y for perfectly horizontal line
-        const avgY = (a.cy + b.cy) / 2
-        if (a.cx <= b.cx) {
-          paths.push({ points: [[a.right, avgY], [b.left, avgY]], type: 'spouse', id: m.id + '::' + sid })
-        } else {
-          paths.push({ points: [[a.left, avgY], [b.right, avgY]], type: 'spouse', id: m.id + '::' + sid })
+    m.spouseIds.forEach(sid => {
+      if (sid && byId[m.id] && byId[sid]) {
+        const a = byId[m.id]
+        const b = byId[sid]
+        if (m.id < sid) {
+          // Use average Y for perfectly horizontal line
+          const avgY = (a.cy + b.cy) / 2
+          if (a.cx <= b.cx) {
+            paths.push({ points: [[a.right, avgY], [b.left, avgY]], type: 'spouse', id: m.id + '::' + sid })
+          } else {
+            paths.push({ points: [[a.left, avgY], [b.right, avgY]], type: 'spouse', id: m.id + '::' + sid })
+          }
         }
       }
-    }
+    })
   })
 
   // Group all children by their parents
@@ -362,18 +411,39 @@ function computeConnections() {
       id: 'trunk::' + coupleKey
     })
 
-    // Connection from trunk to each child
-    coupleChildren.forEach(child => {
-      const childPos = byId[child.id]
-      if (!childPos) return
+    const childPositions = coupleChildren.map(child => ({ child, pos: byId[child.id] })).filter(cp => cp.pos)
+    if (!childPositions.length) return
 
-      const midY = (trunkBottomY + childPos.top) / 2
+    // All children share one branch row off the trunk, drawn once so it
+    // isn't redrawn (and visually thickened) per child.
+    const childTop = Math.min(...childPositions.map(cp => cp.pos.top))
+    const elbowY = (trunkBottomY + childTop) / 2
+    paths.push({
+      points: [
+        [midX, trunkBottomY],
+        [midX, elbowY]
+      ],
+      type: 'parent',
+      id: 'branch::' + coupleKey
+    })
+
+    // One shared horizontal row spanning every child, so overlapping
+    // children on the same side of the trunk don't redraw the same stretch.
+    const rowXs = childPositions.map(cp => cp.pos.cx).concat(midX)
+    paths.push({
+      points: [
+        [Math.min(...rowXs), elbowY],
+        [Math.max(...rowXs), elbowY]
+      ],
+      type: 'parent',
+      id: 'branch-row::' + coupleKey
+    })
+
+    childPositions.forEach(({ child, pos }) => {
       paths.push({
         points: [
-          [midX, trunkBottomY],
-          [midX, midY],
-          [childPos.cx, midY],
-          [childPos.cx, childPos.top]
+          [pos.cx, elbowY],
+          [pos.cx, pos.top]
         ],
         type: 'parent',
         id: coupleKey + '->' + child.id
@@ -385,24 +455,46 @@ function computeConnections() {
   Object.entries(childrenBySingle).forEach(([parentId, singleChildren]) => {
     // Skip if this parent is also in a couple (they should be handled above)
     const parent = familyMembers.find(m => m.id === parentId)
-    if (parent && parent.spouseId && familyMembers.some(m => m.id === parent.spouseId)) {
+    if (parent && parent.spouseIds.some(sid => familyMembers.some(m => m.id === sid))) {
       return
     }
 
     const p = byId[parentId]
     if (!p) return
 
-    singleChildren.forEach(child => {
-      const childPos = byId[child.id]
-      if (!childPos) return
+    const childPositions = singleChildren.map(child => ({ child, pos: byId[child.id] })).filter(cp => cp.pos)
+    if (!childPositions.length) return
 
-      const midY = (p.bottom + childPos.top) / 2
+    // All children share one branch row off the parent, drawn once so it
+    // isn't redrawn (and visually thickened) per child.
+    const childTop = Math.min(...childPositions.map(cp => cp.pos.top))
+    const elbowY = (p.bottom + childTop) / 2
+    paths.push({
+      points: [
+        [p.cx, p.bottom],
+        [p.cx, elbowY]
+      ],
+      type: 'parent',
+      id: 'branch::' + parentId
+    })
+
+    // One shared horizontal row spanning every child, so overlapping
+    // children on the same side of the parent don't redraw the same stretch.
+    const rowXs = childPositions.map(cp => cp.pos.cx).concat(p.cx)
+    paths.push({
+      points: [
+        [Math.min(...rowXs), elbowY],
+        [Math.max(...rowXs), elbowY]
+      ],
+      type: 'parent',
+      id: 'branch-row::' + parentId
+    })
+
+    childPositions.forEach(({ child, pos }) => {
       paths.push({
         points: [
-          [p.cx, p.bottom],
-          [p.cx, midY],
-          [childPos.cx, midY],
-          [childPos.cx, childPos.top]
+          [pos.cx, elbowY],
+          [pos.cx, pos.top]
         ],
         type: 'parent',
         id: parentId + '->' + child.id
@@ -410,7 +502,46 @@ function computeConnections() {
     })
   })
 
-  connections.value = paths
+  connections.value = toSegments(paths)
+}
+
+// Break a multi-point elbow path into individual horizontal/vertical segments
+// so each one can use a pattern oriented to match its direction.
+function toSegments(paths) {
+  const segments = []
+  paths.forEach(path => {
+    for (let i = 0; i < path.points.length - 1; i++) {
+      const [x1, y1] = path.points[i]
+      const [x2, y2] = path.points[i + 1]
+      const orientation = Math.abs(x2 - x1) >= Math.abs(y2 - y1) ? 'horizontal' : 'vertical'
+      segments.push({ x1, y1, x2, y2, orientation, id: `${path.id}::${i}` })
+    }
+  })
+  return segments
+}
+
+// Center the first generation horizontally the first time the tree renders.
+const hasCenteredRoot = ref(false)
+
+function centerRootHorizontally() {
+  const chart = chartRef.value
+  const layer = zoomLayerRef.value
+  if (!chart || !layer) return
+  const rows = layer.querySelectorAll('.tree-root > .parent-group > .parents-row')
+  if (!rows.length) return
+
+  const chartRect = chart.getBoundingClientRect()
+  let minLeft = Infinity
+  let maxRight = -Infinity
+  rows.forEach(row => {
+    const r = row.getBoundingClientRect()
+    minLeft = Math.min(minLeft, r.left)
+    maxRight = Math.max(maxRight, r.right)
+  })
+
+  const rowsCenterX = (minLeft + maxRight) / 2
+  const chartCenterX = chartRect.left + chartRect.width / 2
+  panX.value += chartCenterX - rowsCenterX
 }
 
 let resizeObserver
@@ -424,10 +555,19 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', computeConnections)
   if (resizeObserver && chartRef.value) resizeObserver.unobserve(chartRef.value)
+  window.removeEventListener('pointermove', onWindowPointerMove)
+  window.removeEventListener('pointerup', onWindowPointerUp)
+  window.removeEventListener('pointercancel', onWindowPointerUp)
 })
 
 watch([familyTree, selectedId], () => {
-  nextTick(() => computeConnections())
+  nextTick(() => {
+    computeConnections()
+    if (!hasCenteredRoot.value && familyTree.value.length) {
+      centerRootHorizontally()
+      hasCenteredRoot.value = true
+    }
+  })
 })
 
 watch(zoom, () => {
@@ -441,14 +581,23 @@ watch(zoom, () => {
       <div>
         <p class="eyebrow">Hart Family Tree</p>
       </div>
-      <AdminBar :has-selection="!!selectedId" @action="handleAdminAction" />
+      <AdminBar />
     </header>
 
     <div class="family-layout">
+      <aside class="family-sidebar" v-if="sidebarVisible">
+        <PersonCard
+          :person="selectedPerson"
+          :selectedId="selectedId"
+          @close="closePerson"
+          @action="handleAdminAction"
+        />
+      </aside>
+
       <section class="family-map">
         <div class="family-map__header">
-          <h2>Family generations</h2>
-          <p>Click a person to view details for the selected member.</p>
+          <p v-if="isLoading">Loading family data…</p>
+          <p v-else-if="loadError" class="family-map__load-error">Couldn't reach the database, showing offline data. ({{ loadError }})</p>
           <div class="zoom-controls">
             <button type="button" @click="zoomOut" :disabled="zoom <= MIN_ZOOM">−</button>
             <span class="zoom-level">{{ Math.round(zoom * 100) }}%</span>
@@ -463,22 +612,28 @@ watch(zoom, () => {
           :class="{ 'is-panning': isPanning }"
           @wheel="handleWheelZoom"
           @pointerdown="onChartPointerDown"
-          @pointermove="onChartPointerMove"
-          @pointerup="onChartPointerUp"
-          @pointercancel="onChartPointerUp"
           @click.capture="onChartClickCapture"
         >
           <div class="family-map__zoom-layer" ref="zoomLayerRef" :style="{ transform: `translate(${panX}px, ${panY}px) scale(${zoom})` }">
           <svg class="family-connections" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+            <defs>
+              <pattern id="branch-pattern-vertical" width="36" height="36" patternUnits="userSpaceOnUse">
+                <image :href="branchImage" x="-126" y="-126" width="288" height="288" />
+              </pattern>
+              <pattern id="branch-pattern-horizontal" width="36" height="36" patternUnits="userSpaceOnUse">
+                <image :href="branchImage" x="-126" y="-126" width="295" height="288" transform="rotate(90 18 18)" />
+              </pattern>
+            </defs>
             <g>
-              <polyline
-                v-for="path in connections"
-                :key="path.id"
-                :points="path.points.map(p => p.join(',')).join(' ')"
-                :class="['connection', path.type]"
-                fill="none"
+              <line
+                v-for="seg in connections"
+                :key="seg.id"
+                :x1="seg.x1"
+                :y1="seg.y1"
+                :x2="seg.x2"
+                :y2="seg.y2"
+                :class="['connection', seg.orientation]"
                 stroke-linecap="round"
-                stroke-linejoin="round"
               />
             </g>
           </svg>
@@ -495,56 +650,33 @@ watch(zoom, () => {
           </div>
         </div>
       </section>
-
-      <aside class="family-sidebar" v-if="selectedId && sidebarOpen">
-        <PersonCard
-          :person="selectedPerson"
-          :selectedId="selectedId"
-          :parents="selectedParents"
-          :children="selectedChildren"
-          :spouse="selectedSpouse"
-          @close="closePerson"
-        />
-      </aside>
     </div>
 
     <PersonFormModal
       v-if="activeModal"
       :mode="activeModal"
       :person="selectedPerson"
-      :spouse="selectedSpouse"
+      :spouses="selectedSpouses"
+      :error="saveError"
+      :saving="savingModal"
       @close="closeModal"
       @submit="handleModalSubmit"
     />
-
-    <div v-if="showExport" class="modal-overlay" @click.self="closeExport">
-      <div class="modal">
-        <div class="modal__header">
-          <h3>Export family data</h3>
-          <button type="button" class="modal__close" @click="closeExport">×</button>
-        </div>
-        <p class="modal__hint">
-          Changes are only saved in this browser. Copy this JSON and paste it over the
-          <code>familyMembers</code> array in <code>src/data/familyData.js</code> to make it permanent for everyone.
-        </p>
-        <textarea class="export-textarea" readonly :value="exportMembersJson()"></textarea>
-        <div class="modal__actions">
-          <button type="button" class="modal__cancel" @click="closeExport">Close</button>
-          <button type="button" class="modal__submit" @click="copyExport">
-            {{ exportCopied ? 'Copied!' : 'Copy to clipboard' }}
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <style scoped>
+.family-tree-page {
+  position: relative;
+  padding: 10px;
+  box-sizing: border-box;
+}
 .family-map__chart {
   position: relative;
   padding: 12px;
+  box-sizing: border-box;
   overflow: hidden;
-  min-width: max-content;
+  min-width: 0;
   width: 100%;
   cursor: grab;
   touch-action: none;
@@ -558,15 +690,32 @@ watch(zoom, () => {
   transform-origin: top left;
   width: max-content;
 }
+.family-map__header {
+  position: absolute;
+  top: 100px;
+  left: 0;
+  right: 0;
+  z-index: 10;
+}
 .zoom-controls {
+  /* sits alongside the page header instead of floating over the map */
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
+  background: #fff;
+  padding: 6px 8px;
+  border-radius: 8px;
+  box-shadow: var(--shadow, 0 6px 18px rgba(0, 0, 0, 0.08));
+  z-index: 20;
 }
 .zoom-controls button {
   border: 1px solid #d1d5db;
   background: #fff;
+  color: #000;
   border-radius: 6px;
   width: 32px;
   height: 32px;
@@ -587,7 +736,7 @@ watch(zoom, () => {
   min-width: 48px;
   text-align: center;
   font-size: 0.9rem;
-  color: #6b7280;
+  color: black;
 }
 .family-connections {
   position: absolute;
@@ -598,14 +747,13 @@ watch(zoom, () => {
   pointer-events: none;
   z-index: 0;
 }
-.connection.spouse {
-  stroke: #6b7280;
-  stroke-width: 2;
+.connection.vertical {
+  stroke: url(#branch-pattern-vertical);
+  stroke-width: 15;
 }
-.connection.parent {
-  stroke: #374151;
-  stroke-width: 1.5;
-  stroke-dasharray: 0;
+.connection.horizontal {
+  stroke: url(#branch-pattern-horizontal);
+  stroke-width: 15;
 }
 .tree-root {
   display: flex;
@@ -615,100 +763,80 @@ watch(zoom, () => {
   padding: 20px 0;
 }
 .family-layout {
-  display: grid;
-  grid-template-columns: 1.4fr 0.85fr;
-  gap: 24px;
-  align-items: start;
+  position: relative;
+}
+.family-map {
+  position: relative;
+  min-width: 0;
 }
 .family-sidebar {
-  max-width: 420px;
+  position: absolute;
+  top: 100px;
+  left: 0;
+  width: min(360px, calc(100% - 32px));
+  z-index: 15;
+  /* only the card itself should catch clicks, not the shrink-wrapped box around it */
+  pointer-events: none;
+}
+.family-sidebar > * {
+  pointer-events: auto;
+}
+@media (max-width: 700px) {
+  .family-sidebar {
+    /* family-layout can be far taller than the viewport, so pin to the viewport itself */
+    position: fixed;
+    top: auto;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(400px, calc(100vw - 20px));
+  }
+  .zoom-controls {
+    display: none;
+  }
+}
+/* short landscape phone screens: keep the card on the left, vertical, sized to the shorter viewport */
+@media (max-height: 500px) and (orientation: landscape) {
+  .family-sidebar {
+    position: fixed;
+    top: 56px;
+    bottom: auto;
+    left: 10px;
+    transform: none;
+    width: min(320px, calc(100vw - 20px));
+    max-height: calc(100vh - 66px);
+    overflow-y: auto;
+  }
+  .zoom-controls {
+    display: none;
+  }
 }
 .page-header {
-  margin-bottom: 22px;
+  position: absolute;
+  /* an ancestor's own padding doesn't inset its absolutely positioned children, so match the page padding explicitly here */
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 20;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  /* the gap between the title and admin button should let clicks/drags reach the tree below */
+  pointer-events: none;
+}
+.page-header > * {
+  pointer-events: auto;
 }
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.18em;
-  color: #6b7280;
-  font-size: 0.8rem;
+  color: brown;
+  font-size: 1.4rem;
+  font-family: 'Cinzel Decorative', fantasy, serif;
   margin-bottom: 8px;
 }
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(17, 24, 39, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-.modal {
-  background: #fff;
-  border-radius: 10px;
-  width: min(480px, calc(100vw - 32px));
-  max-height: calc(100vh - 64px);
-  overflow-y: auto;
-  padding: 20px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
-}
-.modal__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.modal__header h3 {
-  margin: 0;
-  font-size: 1.05rem;
-}
-.modal__close {
-  border: none;
-  background: transparent;
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-  color: #374151;
-}
-.modal__hint {
-  font-size: 0.85rem;
-  color: #6b7280;
-  line-height: 1.5;
-}
-.export-textarea {
-  width: 100%;
-  height: 260px;
-  box-sizing: border-box;
-  font-family: 'SFMono-Regular', Consolas, monospace;
-  font-size: 0.8rem;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  padding: 10px;
-  resize: vertical;
-}
-.modal__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 12px;
-}
-.modal__cancel {
-  border: 1px solid #d1d5db;
-  background: #fff;
-  border-radius: 6px;
-  padding: 8px 14px;
-  cursor: pointer;
-}
-.modal__submit {
-  border: none;
-  background: #2563eb;
-  color: #fff;
-  border-radius: 6px;
-  padding: 8px 14px;
-  font-weight: 600;
-  cursor: pointer;
+.family-map__load-error {
+  color: #b45309;
 }
 </style>

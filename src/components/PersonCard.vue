@@ -1,5 +1,7 @@
 <script setup>
 import { computed } from 'vue'
+import { isAdmin } from '../store/adminAuth'
+import unknownAvatar from '../assets/unknown.webp'
 
 const props = defineProps({
   person: {
@@ -9,20 +11,10 @@ const props = defineProps({
   selectedId: {
     type: String,
     required: false
-  },
-  parents: {
-    type: Array,
-    default: () => []
-  },
-  children: {
-    type: Array,
-    default: () => []
-  },
-  spouse: {
-    type: Object,
-    default: null
   }
 })
+
+defineEmits(['close', 'action'])
 
 const isSelected = computed(() => props.person.id === props.selectedId)
 </script>
@@ -31,44 +23,114 @@ const isSelected = computed(() => props.person.id === props.selectedId)
   <div class="person-card" :class="{ selected: isSelected }">
     <button class="person-card__close" @click="$emit('close')">×</button>
     <div class="person-card__header">
+      <div class="person-card__avatar">
+        <img :src="person.image || unknownAvatar" :alt="person.name + ' avatar'" />
+      </div>
       <div class="person-card__title">
         <h2>{{ person.name }}</h2>
         <span>{{ person.birth }}<template v-if="person.death"> – {{ person.death }}</template></span>
-      </div>
-      <div class="person-card__avatar">
-        <img :src="person.image || '/favicon.svg'" :alt="person.name + ' avatar'" />
       </div>
     </div>
 
     <p class="person-card__notes">{{ person.notes }}</p>
 
-    <div class="person-card__meta">
-      <div>
-        <strong>Spouse</strong>
-        <p>{{ spouse ? spouse.name : 'None listed' }}</p>
-      </div>
-      <div>
-        <strong>Parents</strong>
-        <p>{{ parents.length ? parents.map(p => p.name).join(', ') : 'Unknown' }}</p>
-      </div>
-      <div>
-        <strong>Children</strong>
-        <p>{{ children.length ? children.map(c => c.name).join(', ') : 'No children listed' }}</p>
-      </div>
+    <div v-if="isAdmin" class="person-card__admin-actions">
+      <button type="button" class="person-card__edit" @click="$emit('action', 'edit-person')">Edit Person</button>
+      <button type="button" @click="$emit('action', 'add-parents')">Add Parents</button>
+      <button type="button" @click="$emit('action', 'add-sibling')">Add Sibling</button>
+      <button type="button" @click="$emit('action', 'add-partner')">Add Partner</button>
+      <button type="button" @click="$emit('action', 'add-child')">Add Child</button>
+      <button type="button" class="person-card__delete" @click="$emit('action', 'delete-person')">Delete Person</button>
     </div>
   </div>
 </template>
 
 <style scoped>
-.person-card{position:relative}
+.person-card{
+  position:relative;
+  width:100%;
+  box-sizing:border-box;
+  background:var(--accent-bg, #f5f0ff);
+  border:1px solid var(--accent-border, #126116);
+  border-radius:16px;
+  padding:24px;
+  box-shadow:var(--shadow, 0 6px 18px rgba(0, 0, 0, 0.08));
+}
+.person-card.selected{
+  border-color:#054105;
+  background-color:#5f2d16;
+}
 .person-card__header{
   display:flex;
+  flex-direction:column;
   align-items:center;
-  justify-content:space-between;
+  text-align:center;
   gap:12px;
+   white-space:nowrap;
 }
-.person-card__close{position:absolute;right:12px;top:12px;border:0;background:transparent;font-size:20px;line-height:1;cursor:pointer;color:#374151}
+.person-card__close{position:absolute;right:12px;top:12px;border:0;background:transparent;font-size:20px;line-height:1;cursor:pointer;color:white}
 .person-card__title h2{margin:0;font-size:1.1rem}
-.person-card__avatar img{width:56px;height:56px;border-radius:50%;object-fit:cover}
-.person-card__meta{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
+.person-card__avatar img{width:96px;height:96px;border-radius:50%;object-fit:cover}
+.person-card__admin-actions{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-top:16px;
+  padding-top:16px;
+  border-top:1px solid #e5e7eb;
+}
+.person-card__admin-actions button{
+  border:1px solid #d1d5db;
+  background:#f9fafb;
+  border-radius:6px;
+  padding:8px 10px;
+  font-size:0.85rem;
+  cursor:pointer;
+  white-space:nowrap;
+  color: #000;
+}
+.person-card__admin-actions button:hover{
+  border-color:#0d2f69;
+}
+.person-card__delete{
+  background:#b91c1c !important;
+  border-color:#fca5a5;
+  color:#f8f3f3 !important;
+}
+.person-card__delete:hover{
+  border-color:#b91c1c;
+}
+/* short landscape phone screens: shrink the card so it fits without covering the whole view, staying vertical */
+@media (max-height: 500px) and (orientation: landscape) {
+  .person-card {
+    padding: 10px 16px;
+  }
+  .person-card__avatar img {
+    width: 56px;
+    height: 56px;
+  }
+  .person-card__title h2 {
+    font-size: 1rem;
+  }
+  .person-card__notes {
+    font-size: 0.85rem;
+  }
+  .person-card__admin-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+  .person-card__admin-actions button {
+    flex: 1 1 auto;
+  }
+}
+.person-card__edit{
+  background:#15803d !important;
+  border-color:#15803d;
+  color:#fff !important;
+}
+.person-card__edit:hover{
+  border-color:#166534;
+}
 </style>

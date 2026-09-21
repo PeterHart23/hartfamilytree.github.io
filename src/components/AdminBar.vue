@@ -2,43 +2,34 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { isAdmin, login, logout } from '../store/adminAuth'
 
-defineProps({
-  hasSelection: {
-    type: Boolean,
-    default: false
-  }
-})
-
-const emit = defineEmits(['action'])
-
 const rootRef = ref(null)
 const panelOpen = ref(false)
-const username = ref('')
+const email = ref('')
 const password = ref('')
 const error = ref('')
+const signingIn = ref(false)
 
 function togglePanel() {
   panelOpen.value = !panelOpen.value
   error.value = ''
 }
 
-function handleLogin() {
-  if (login(username.value, password.value)) {
+async function handleLogin() {
+  signingIn.value = true
+  const ok = await login(email.value, password.value)
+  signingIn.value = false
+  if (ok) {
     error.value = ''
-    username.value = ''
+    email.value = ''
     password.value = ''
+    panelOpen.value = false
   } else {
-    error.value = 'Invalid username or password.'
+    error.value = 'Invalid email or password.'
   }
 }
 
-function handleLogout() {
-  logout()
-  panelOpen.value = false
-}
-
-function emitAction(action) {
-  emit('action', action)
+async function handleLogout() {
+  await logout()
   panelOpen.value = false
 }
 
@@ -61,26 +52,18 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
     <div v-if="panelOpen" class="admin-bar__panel">
       <form v-if="!isAdmin" class="admin-bar__login" @submit.prevent="handleLogin">
         <label>
-          Username
-          <input v-model="username" type="text" autocomplete="username" />
+          Email
+          <input v-model="email" type="email" autocomplete="username" />
         </label>
         <label>
           Password
           <input v-model="password" type="password" autocomplete="current-password" />
         </label>
         <p v-if="error" class="admin-bar__error">{{ error }}</p>
-        <button type="submit">Sign In</button>
+        <button type="submit" :disabled="signingIn">{{ signingIn ? 'Signing In…' : 'Sign In' }}</button>
       </form>
 
       <div v-else class="admin-bar__actions">
-        <p v-if="!hasSelection" class="admin-bar__hint">Select a card to enable actions.</p>
-        <button type="button" :disabled="!hasSelection" @click="emitAction('edit-person')">Edit Person</button>
-        <button type="button" :disabled="!hasSelection" @click="emitAction('add-parents')">Add Parents</button>
-        <button type="button" :disabled="!hasSelection" @click="emitAction('add-sibling')">Add Sibling</button>
-        <button type="button" :disabled="!hasSelection" @click="emitAction('add-partner')">Add Partner</button>
-        <button type="button" :disabled="!hasSelection" @click="emitAction('add-child')">Add Child</button>
-        <hr />
-        <button type="button" class="admin-bar__link" @click="emitAction('export')">Export changes…</button>
         <button type="button" class="admin-bar__link admin-bar__signout" @click="handleLogout">Sign Out</button>
       </div>
     </div>
@@ -154,28 +137,10 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
   flex-direction: column;
   gap: 8px;
 }
-.admin-bar__actions button {
-  border: 1px solid #d1d5db;
-  background: #f9fafb;
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-size: 0.85rem;
-  text-align: left;
-  cursor: pointer;
-}
-.admin-bar__actions button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
 .admin-bar__hint {
   font-size: 0.8rem;
   color: #6b7280;
   margin: 0 0 2px;
-}
-.admin-bar__actions hr {
-  border: none;
-  border-top: 1px solid #e5e7eb;
-  margin: 4px 0;
 }
 .admin-bar__link {
   border: none !important;
