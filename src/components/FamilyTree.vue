@@ -1,12 +1,18 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import PersonCard from './PersonCard.vue'
 import FamilyGroup from './FamilyGroup.vue'
 import AdminBar from './AdminBar.vue'
+import TreeSwitcher from './TreeSwitcher.vue'
 import PersonFormModal from './PersonFormModal.vue'
-import { members as familyMembers, isLoading, loadError, updatePerson, addPartner, addSibling, addChild, addParents, deletePerson } from '../store/familyStore'
+import { members as familyMembers, isLoading, loadError, loadMembers, updatePerson, addPartner, addSibling, addChild, addParents, deletePerson } from '../store/familyStore'
 import { deleteAvatar } from '../lib/avatarStorage'
 import branchImage from '../assets/branch.webp'
+
+const route = useRoute()
+const treeId = computed(() => route.params.slug)
+loadMembers(treeId.value)
 
 const selectedId = ref(null)
 const sidebarOpen = ref(true)
@@ -579,7 +585,7 @@ watch(zoom, () => {
   <div class="family-tree-page">
     <header class="page-header">
       <div>
-        <p class="eyebrow">Hart Family Tree</p>
+        <TreeSwitcher :current-tree-id="treeId" />
       </div>
       <AdminBar />
     </header>
@@ -678,6 +684,10 @@ watch(zoom, () => {
   overflow: hidden;
   min-width: 0;
   width: 100%;
+  /* Fill the viewport even when the tree has very little content (e.g. a
+     brand-new tree with one node), so the whole visible area stays pannable
+     instead of only the small area the content happens to occupy. */
+  min-height: calc(100vh - 20px);
   cursor: grab;
   touch-action: none;
 }
@@ -827,14 +837,6 @@ watch(zoom, () => {
 }
 .page-header > * {
   pointer-events: auto;
-}
-.eyebrow {
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: brown;
-  font-size: 1.4rem;
-  font-family: 'Cinzel Decorative', fantasy, serif;
-  margin-bottom: 8px;
 }
 .family-map__load-error {
   color: #b45309;

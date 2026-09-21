@@ -1,7 +1,6 @@
 <script setup>
-import FamilyTree from './components/FamilyTree.vue'
 </script>
 
 <template>
-  <FamilyTree />
+  <router-view :key="$route.fullPath" />
 </template>

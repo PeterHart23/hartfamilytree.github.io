@@ -1,10 +1,15 @@
 import { reactive, ref } from 'vue'
 import { supabase } from '../lib/supabaseClient'
 import { familyMembers as defaultMembers } from '../data/familyData'
+import { DEFAULT_TREE_ID } from './treeStore'
 
 export const members = reactive([])
 export const isLoading = ref(true)
 export const loadError = ref(null)
+
+// The tree currently loaded into `members`; stamped onto every person created
+// from here on so multiple trees can share the same `people` table.
+let activeTreeId = null
 
 // --- Row <-> app-shape conversion -----------------------------------------
 // DB uses snake_case + `date` columns; the app uses camelCase + MM/DD/YYYY text.
@@ -30,7 +35,8 @@ function fromRow(row) {
     image: row.image || '',
     notes: row.notes || '',
     spouseIds: row.spouse_ids || [],
-    parentIds: row.parent_ids || []
+    parentIds: row.parent_ids || [],
+    treeId: row.tree_id
   }
 }
 
@@ -43,27 +49,28 @@ function toRow(person) {
     image: person.image || '',
     notes: person.notes || '',
     spouse_ids: person.spouseIds || [],
-    parent_ids: person.parentIds || []
+    parent_ids: person.parentIds || [],
+    tree_id: person.treeId
   }
 }
 
 // --- Initial load ----------------------------------------------------------
-export async function loadMembers() {
+export async function loadMembers(treeId) {
+  activeTreeId = treeId
   isLoading.value = true
   loadError.value = null
   try {
-    const { data, error } = await supabase.from('people').select('*')
+    const { data, error } = await supabase.from('people').select('*').eq('tree_id', treeId)
     if (error) throw error
     members.splice(0, members.length, ...data.map(fromRow))
   } catch (err) {
-    console.warn('Failed to load family data from Supabase, using bundled defaults.', err)
+    console.warn(`Failed to load family data for "${treeId}" from Supabase.`, err)
     loadError.value = err.message || String(err)
-    members.splice(0, members.length, ...defaultMembers.map(m => ({ ...m })))
+    // The bundled fallback data only represents the original Hart family tree.
+    members.splice(0, members.length, ...(treeId === DEFAULT_TREE_ID ? defaultMembers.map(m => ({ ...m, treeId })) : []))
   }
   isLoading.value = false
 }
-
-loadMembers()
 
 function slugify(name) {
   return (
@@ -76,7 +83,7 @@ function slugify(name) {
 }
 
 function generateId(name) {
-  const base = slugify(name)
+  const base = `${activeTreeId}-${slugify(name)}`
   const existing = new Set(members.map(m => m.id))
   let id = base
   let suffix = 1
@@ -97,6 +104,7 @@ function makePerson(data) {
     birth: data.birth || '',
     death: data.death || '',
     image: data.image || '',
+    treeId: activeTreeId,
     spouseIds: [],
     parentIds: [],
     notes: data.notes || ''

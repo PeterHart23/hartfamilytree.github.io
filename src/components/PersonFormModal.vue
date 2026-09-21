@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { uploadAvatar, deleteAvatar, avatarPathFromUrl } from '../lib/avatarStorage'
 import ImageCropModal from './ImageCropModal.vue'
 
@@ -58,8 +58,68 @@ const selectedSpouseId = ref(props.spouses.length === 1 ? props.spouses[0].id : 
 const uploadingImage = ref(false)
 const uploadError = ref('')
 const cropFile = ref(null)
+const nameInputRef = ref(null)
+
+onMounted(() => {
+  nameInputRef.value?.select()
+})
 
 const DATE_FORMAT_ERROR = 'Use MM/DD/YYYY'
+
+// Formats raw typed digits as MM/DD/YYYY, inserting each slash as soon as
+// the segment before it is complete (after the 2nd and 4th digits).
+function formatDateDigits(digits) {
+  const d = digits.slice(0, 8)
+  let out = d.slice(0, 2)
+  if (d.length >= 2) out += '/'
+  out += d.slice(2, 4)
+  if (d.length >= 4) out += '/'
+  out += d.slice(4, 8)
+  return out
+}
+
+function onDateInput(event, target, field) {
+  const input = event.target
+  const caret = input.selectionStart ?? input.value.length
+  const digitsBeforeCaret = input.value.slice(0, caret).replace(/\D/g, '').length
+  const digits = input.value.replace(/\D/g, '').slice(0, 8)
+  target[field] = formatDateDigits(digits)
+
+  nextTick(() => {
+    const formatted = target[field]
+    let seen = 0
+    let pos = formatted.length
+    for (let i = 0; i < formatted.length; i++) {
+      if (/\d/.test(formatted[i])) {
+        seen++
+        if (seen === digitsBeforeCaret) {
+          pos = i + 1
+          // Land after an immediately-following auto-inserted slash so
+          // typing continues past it instead of in front of it.
+          while (pos < formatted.length && formatted[pos] === '/') pos++
+          break
+        }
+      }
+    }
+    if (digitsBeforeCaret === 0) pos = 0
+    input.setSelectionRange(pos, pos)
+  })
+}
+
+// Backspacing right after an auto-inserted slash removes the slash and the
+// digit before it together, so the slash doesn't linger requiring an extra keypress.
+function onDateKeydown(event, target, field) {
+  if (event.key !== 'Backspace') return
+  const input = event.target
+  if (input.selectionStart !== input.selectionEnd) return
+  const pos = input.selectionStart
+  if (pos > 0 && input.value[pos - 1] === '/') {
+    event.preventDefault()
+    const digits = (input.value.slice(0, pos - 2) + input.value.slice(pos)).replace(/\D/g, '').slice(0, 8)
+    target[field] = formatDateDigits(digits)
+    nextTick(() => input.setSelectionRange(pos - 2, pos - 2))
+  }
+}
 
 function isValidDateValue(value) {
   const trimmed = (value || '').trim()
@@ -149,17 +209,31 @@ function handleSubmit() {
       <form class="modal__form" @submit.prevent="handleSubmit">
         <label>
           Name
-          <input v-model="form.name" type="text" required autofocus />
+          <input ref="nameInputRef" v-model="form.name" type="text" required autofocus />
         </label>
         <div class="modal__row">
           <label>
             Birth
-            <input v-model="form.birth" type="text" placeholder="MM/DD/YYYY" />
+            <input
+              :value="form.birth"
+              type="text"
+              placeholder="MM/DD/YYYY"
+              maxlength="10"
+              @input="onDateInput($event, form, 'birth')"
+              @keydown="onDateKeydown($event, form, 'birth')"
+            />
             <span v-if="birthError" class="modal__field-error">{{ birthError }}</span>
           </label>
           <label>
             Death
-            <input v-model="form.death" type="text" placeholder="MM/DD/YYYY" />
+            <input
+              :value="form.death"
+              type="text"
+              placeholder="MM/DD/YYYY"
+              maxlength="10"
+              @input="onDateInput($event, form, 'death')"
+              @keydown="onDateKeydown($event, form, 'death')"
+            />
             <span v-if="deathError" class="modal__field-error">{{ deathError }}</span>
           </label>
         </div>
@@ -185,12 +259,26 @@ function handleSubmit() {
           <div class="modal__row">
             <label>
               Birth
-              <input v-model="parentTwo.birth" type="text" placeholder="MM/DD/YYYY" />
+              <input
+                :value="parentTwo.birth"
+                type="text"
+                placeholder="MM/DD/YYYY"
+                maxlength="10"
+                @input="onDateInput($event, parentTwo, 'birth')"
+                @keydown="onDateKeydown($event, parentTwo, 'birth')"
+              />
               <span v-if="parentTwoBirthError" class="modal__field-error">{{ parentTwoBirthError }}</span>
             </label>
             <label>
               Death
-              <input v-model="parentTwo.death" type="text" placeholder="MM/DD/YYYY" />
+              <input
+                :value="parentTwo.death"
+                type="text"
+                placeholder="MM/DD/YYYY"
+                maxlength="10"
+                @input="onDateInput($event, parentTwo, 'death')"
+                @keydown="onDateKeydown($event, parentTwo, 'death')"
+              />
               <span v-if="parentTwoDeathError" class="modal__field-error">{{ parentTwoDeathError }}</span>
             </label>
           </div>
@@ -253,6 +341,7 @@ function handleSubmit() {
 .modal__header h3 {
   margin: 0;
   font-size: 1.05rem;
+  color:black;
 }
 .modal__close {
   border: none;
