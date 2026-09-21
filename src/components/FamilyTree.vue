@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import PersonCard from './PersonCard.vue'
 import FamilyGroup from './FamilyGroup.vue'
@@ -7,12 +7,17 @@ import AdminBar from './AdminBar.vue'
 import TreeSwitcher from './TreeSwitcher.vue'
 import PersonFormModal from './PersonFormModal.vue'
 import { members as familyMembers, isLoading, loadError, loadMembers, updatePerson, addPartner, addSibling, addChild, addParents, deletePerson } from '../store/familyStore'
+import { trees } from '../store/treeStore'
 import { deleteAvatar } from '../lib/avatarStorage'
 import branchImage from '../assets/branch.webp'
 
 const route = useRoute()
 const treeId = computed(() => route.params.slug)
 loadMembers(treeId.value)
+
+watchEffect(() => {
+  document.title = trees.find(t => t.id === treeId.value)?.name || 'Family Tree'
+})
 
 const selectedId = ref(null)
 const sidebarOpen = ref(true)
@@ -459,12 +464,10 @@ function computeConnections() {
 
   // Process single parents with children
   Object.entries(childrenBySingle).forEach(([parentId, singleChildren]) => {
-    // Skip if this parent is also in a couple (they should be handled above)
-    const parent = familyMembers.find(m => m.id === parentId)
-    if (parent && parent.spouseIds.some(sid => familyMembers.some(m => m.id === sid))) {
-      return
-    }
-
+    // No need to skip parents who've since gained a spouse: a child only
+    // ends up in childrenBySingle when its own parentIds still has just this
+    // one parent (childrenByCouple handles the parentIds.length === 2 case),
+    // so the two buckets never overlap for the same child.
     const p = byId[parentId]
     if (!p) return
 
@@ -689,7 +692,9 @@ watch(zoom, () => {
      instead of only the small area the content happens to occupy. */
   min-height: calc(100vh - 20px);
   cursor: grab;
-  touch-action: none;
+  /* Allow the browser's native pinch-to-zoom gesture; single-finger drag
+     panning is still handled by our own pointer-event listeners below. */
+  touch-action: pinch-zoom;
 }
 .family-map__chart.is-panning {
   cursor: grabbing;

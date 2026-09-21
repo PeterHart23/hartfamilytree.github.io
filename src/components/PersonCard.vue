@@ -36,8 +36,22 @@ const isSelected = computed(() => props.person.id === props.selectedId)
 
     <div v-if="isAdmin" class="person-card__admin-actions">
       <button type="button" class="person-card__edit" @click="$emit('action', 'edit-person')">Edit Person</button>
-      <button type="button" @click="$emit('action', 'add-parents')">Add Parents</button>
-      <button type="button" @click="$emit('action', 'add-sibling')">Add Sibling</button>
+      <button
+        type="button"
+        :disabled="person.parentIds.length > 0"
+        :title="person.parentIds.length > 0 ? 'Already has parents' : ''"
+        @click="$emit('action', 'add-parents')"
+      >
+        Add Parents
+      </button>
+      <button
+        type="button"
+        :disabled="person.parentIds.length === 0"
+        :title="person.parentIds.length === 0 ? 'Add this person\'s parents first' : ''"
+        @click="$emit('action', 'add-sibling')"
+      >
+        Add Sibling
+      </button>
       <button type="button" @click="$emit('action', 'add-partner')">Add Partner</button>
       <button type="button" @click="$emit('action', 'add-child')">Add Child</button>
       <button type="button" class="person-card__delete" @click="$emit('action', 'delete-person')">Delete Person</button>
@@ -91,6 +105,13 @@ const isSelected = computed(() => props.person.id === props.selectedId)
 }
 .person-card__admin-actions button:hover{
   border-color:#0d2f69;
+}
+.person-card__admin-actions button:disabled{
+  opacity:0.5;
+  cursor:not-allowed;
+}
+.person-card__admin-actions button:disabled:hover{
+  border-color:#d1d5db;
 }
 .person-card__delete{
   background:#b91c1c !important;
