@@ -241,20 +241,21 @@ function resetZoom() {
 // with explicit pan state rather than native scrollLeft/scrollTop because
 // the container may not be scrollable at all zoom levels (e.g. when the
 // content is smaller than the viewport while zoomed out).
-function zoomAtPoint(cursorX, cursorY, direction) {
+function applyZoomAtPoint(cursorX, cursorY, newZoomValue) {
   const oldZoom = zoom.value
   const contentX = (cursorX - panX.value) / oldZoom
   const contentY = (cursorY - panY.value) / oldZoom
 
-  if (direction < 0) {
-    zoomIn()
-  } else {
-    zoomOut()
-  }
+  zoom.value = newZoomValue
 
-  const newZoom = zoom.value
-  panX.value = cursorX - contentX * newZoom
-  panY.value = cursorY - contentY * newZoom
+  panX.value = cursorX - contentX * newZoomValue
+  panY.value = cursorY - contentY * newZoomValue
+}
+
+function zoomAtPoint(cursorX, cursorY, direction) {
+  const step = direction < 0 ? 0.1 : -0.1
+  const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(zoom.value + step).toFixed(2)))
+  applyZoomAtPoint(cursorX, cursorY, newZoom)
 }
 
 function handleWheelZoom(event) {
@@ -272,31 +273,70 @@ function handleWheelZoom(event) {
   zoomAtPoint(cursorX, cursorY, event.deltaY)
 }
 
-// Click-and-drag panning of the chart. A small movement threshold keeps
-// plain clicks on person cards working as selections rather than drags.
-// Tracked via window listeners (not setPointerCapture) because pointer
-// capture retargets the resulting click event to the capturing element,
-// which breaks click handlers on nested cards.
+// Click-and-drag panning of the chart, plus two-finger pinch-to-zoom on
+// touch devices. Tracked via window listeners (not setPointerCapture)
+// because pointer capture retargets the resulting click event to the
+// capturing element, which breaks click handlers on nested cards.
 const isPanning = ref(false)
 const dragMoved = ref(false)
 const DRAG_THRESHOLD = 4
 const dragStart = { x: 0, y: 0 }
 const panOrigin = { x: 0, y: 0 }
+const activePointers = new Map()
+let pinchStartDistance = 0
+let pinchStartZoom = 1
+
+function pointerDistance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
+function pointerMidpoint(a, b) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+}
+
+function beginPan(x, y) {
+  isPanning.value = true
+  dragMoved.value = false
+  dragStart.x = x
+  dragStart.y = y
+  panOrigin.x = panX.value
+  panOrigin.y = panY.value
+}
 
 function onChartPointerDown(event) {
   if (event.button !== 0) return
-  isPanning.value = true
-  dragMoved.value = false
-  dragStart.x = event.clientX
-  dragStart.y = event.clientY
-  panOrigin.x = panX.value
-  panOrigin.y = panY.value
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+
+  if (activePointers.size === 2) {
+    isPanning.value = false
+    const [a, b] = [...activePointers.values()]
+    pinchStartDistance = pointerDistance(a, b)
+    pinchStartZoom = zoom.value
+  } else if (activePointers.size === 1) {
+    beginPan(event.clientX, event.clientY)
+  }
+
   window.addEventListener('pointermove', onWindowPointerMove)
   window.addEventListener('pointerup', onWindowPointerUp)
   window.addEventListener('pointercancel', onWindowPointerUp)
 }
 
 function onWindowPointerMove(event) {
+  if (!activePointers.has(event.pointerId)) return
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+
+  if (activePointers.size === 2) {
+    const [a, b] = [...activePointers.values()]
+    if (pinchStartDistance > 0) {
+      const distance = pointerDistance(a, b)
+      const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(pinchStartZoom * (distance / pinchStartDistance)).toFixed(3)))
+      const mid = pointerMidpoint(a, b)
+      const rect = chartRef.value?.getBoundingClientRect()
+      applyZoomAtPoint(mid.x - (rect?.left ?? 0), mid.y - (rect?.top ?? 0), newZoom)
+    }
+    return
+  }
+
   if (!isPanning.value) return
   const dx = event.clientX - dragStart.x
   const dy = event.clientY - dragStart.y
@@ -307,11 +347,20 @@ function onWindowPointerMove(event) {
   panY.value = panOrigin.y + dy
 }
 
-function onWindowPointerUp() {
-  isPanning.value = false
-  window.removeEventListener('pointermove', onWindowPointerMove)
-  window.removeEventListener('pointerup', onWindowPointerUp)
-  window.removeEventListener('pointercancel', onWindowPointerUp)
+function onWindowPointerUp(event) {
+  activePointers.delete(event.pointerId)
+
+  if (activePointers.size === 1) {
+    // One finger remains after a pinch — resume panning from its current
+    // position instead of jumping back to wherever the drag last started.
+    const [remaining] = [...activePointers.values()]
+    beginPan(remaining.x, remaining.y)
+  } else if (activePointers.size === 0) {
+    isPanning.value = false
+    window.removeEventListener('pointermove', onWindowPointerMove)
+    window.removeEventListener('pointerup', onWindowPointerUp)
+    window.removeEventListener('pointercancel', onWindowPointerUp)
+  }
 }
 
 // Suppress the click that follows a drag so it doesn't select a person.
@@ -692,9 +741,9 @@ watch(zoom, () => {
      instead of only the small area the content happens to occupy. */
   min-height: calc(100vh - 20px);
   cursor: grab;
-  /* Allow the browser's native pinch-to-zoom gesture; single-finger drag
-     panning is still handled by our own pointer-event listeners below. */
-  touch-action: pinch-zoom;
+  /* Pinch-to-zoom and drag-to-pan are both handled ourselves via pointer
+     events, so the browser's own touch gestures need to stay out of the way. */
+  touch-action: none;
 }
 .family-map__chart.is-panning {
   cursor: grabbing;

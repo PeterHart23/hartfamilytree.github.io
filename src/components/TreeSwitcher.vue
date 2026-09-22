@@ -135,6 +135,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
   border-radius: 6px;
   padding: 8px 10px;
   font-size: 0.9rem;
+  font-family: 'Cinzel Decorative', fantasy, serif;
   text-align: left;
   cursor: pointer;
   color: #1f2937;

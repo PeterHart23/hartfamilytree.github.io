@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { isAdmin, login, logout } from '../store/adminAuth'
+import adminIcon from '../assets/admin2.png'
 
 const rootRef = ref(null)
 const panelOpen = ref(false)
@@ -45,8 +46,13 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
 
 <template>
   <div class="admin-bar" ref="rootRef">
-    <button type="button" class="admin-bar__trigger" @click="togglePanel">
-      {{ isAdmin ? 'Admin' : 'Admin Sign In' }}
+    <button
+      type="button"
+      class="admin-bar__trigger"
+      :title="isAdmin ? 'Admin' : 'Admin Sign In'"
+      @click="togglePanel"
+    >
+      <img :src="adminIcon" alt="Admin" />
     </button>
 
     <div v-if="panelOpen" class="admin-bar__panel">
@@ -75,14 +81,24 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
   position: relative;
 }
 .admin-bar__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid #d1d5db;
   background: #fff;
-  border-radius: 6px;
-  padding: 8px 14px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: #374151;
+  border-radius: 50%;
+  width: 96px;
+  height: 96px;
+  /* A square image's corners stick out past a circular frame unless the
+     circle's diameter comfortably exceeds the image's diagonal, hence the
+     generous padding here rather than just sizing the image to fill the box. */
+  padding: 16px;
   cursor: pointer;
+}
+.admin-bar__trigger img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 .admin-bar__trigger:hover {
   border-color: #9ca3af;
@@ -116,6 +132,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
   border-radius: 6px;
   padding: 6px 8px;
   font-size: 0.9rem;
+
 }
 .admin-bar__login button[type='submit'] {
   margin-top: 4px;

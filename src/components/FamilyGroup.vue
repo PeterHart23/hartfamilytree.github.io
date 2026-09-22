@@ -101,18 +101,18 @@ defineEmits(['select'])
   display: grid;
   gap: 4px;
   justify-items: center;
-  color: black !important;
-  background: rgba(255, 255, 255, 0.65);
+  color: white !important;
+  background: rgba(0, 0, 0, 0.65);
   border-radius: 6px;
   padding: 6px 10px;
 }
 .node-name {
   font-weight: 650;
   display: block;
-  color:black;
+  color: white;
 }
 .node-birth {
-  color: black;
+  color: white;
   font-size: 0.95rem;
 }
 </style>
