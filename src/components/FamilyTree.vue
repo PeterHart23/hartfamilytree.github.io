@@ -8,6 +8,7 @@ import TreeSwitcher from './TreeSwitcher.vue'
 import PersonFormModal from './PersonFormModal.vue'
 import { members as familyMembers, isLoading, loadError, loadMembers, updatePerson, addPartner, addSibling, addChild, addParents, deletePerson } from '../store/familyStore'
 import { trees } from '../store/treeStore'
+import { theme } from '../store/themeStore'
 import { deleteAvatar } from '../lib/avatarStorage'
 import branchImage from '../assets/branch.webp'
 
@@ -138,6 +139,7 @@ const selectedSpouses = computed(() => selectedPerson.value.spouseIds.map(sid =>
 function selectPerson(person) {
   if (selectedId.value === person.id) {
     sidebarOpen.value = !sidebarOpen.value
+    if (!sidebarOpen.value) selectedId.value = null
   } else {
     selectedId.value = person.id
     sidebarOpen.value = true
@@ -146,6 +148,7 @@ function selectPerson(person) {
 
 function closePerson() {
   sidebarOpen.value = false
+  selectedId.value = null
 }
 
 const activeModal = ref(null)
@@ -578,6 +581,40 @@ function toSegments(paths) {
   return segments
 }
 
+// SVG filters (feTurbulence/feDisplacementMap) collapse to nothing on a
+// perfectly axis-aligned line, since its bounding box has zero width or
+// height. Drawing the wave as an actual path sidesteps that. Points are
+// smoothed into a curve (quadratic segments through midpoints) instead of
+// straight segments so the wave reads as smooth rather than jagged.
+function wavyPathD(seg) {
+  const { x1, y1, x2, y2, orientation } = seg
+  const length = orientation === 'vertical' ? Math.abs(y2 - y1) : Math.abs(x2 - x1)
+  const wavelength = 36
+  const amplitude = 3
+  const steps = Math.max(4, Math.round(length / 8))
+  const points = []
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps
+    const dist = length * t
+    const wave = i === 0 || i === steps ? 0 : Math.sin((dist / wavelength) * Math.PI * 2) * amplitude
+    if (orientation === 'vertical') {
+      points.push([x1 + wave, y1 + (y2 - y1) * t])
+    } else {
+      points.push([x1 + (x2 - x1) * t, y1 + wave])
+    }
+  }
+
+  let d = `M ${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`
+  for (let i = 1; i < points.length - 1; i++) {
+    const [cx, cy] = points[i]
+    const [nx, ny] = points[i + 1]
+    d += ` Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${((cx + nx) / 2).toFixed(1)} ${((cy + ny) / 2).toFixed(1)}`
+  }
+  const last = points[points.length - 1]
+  d += ` L ${last[0].toFixed(1)} ${last[1].toFixed(1)}`
+  return d
+}
+
 // Center the first generation horizontally the first time the tree renders.
 const hasCenteredRoot = ref(false)
 
@@ -634,7 +671,7 @@ watch(zoom, () => {
 </script>
 
 <template>
-  <div class="family-tree-page">
+  <div class="family-tree-page" :class="{ 'theme-minimalist': theme === 'minimalist', 'theme-mid-century': theme === 'midCenturyModern' }">
     <header class="page-header">
       <div>
         <TreeSwitcher :current-tree-id="treeId" />
@@ -683,16 +720,24 @@ watch(zoom, () => {
               </pattern>
             </defs>
             <g>
-              <line
-                v-for="seg in connections"
-                :key="seg.id"
-                :x1="seg.x1"
-                :y1="seg.y1"
-                :x2="seg.x2"
-                :y2="seg.y2"
-                :class="['connection', seg.orientation]"
-                stroke-linecap="round"
-              />
+              <template v-for="seg in connections" :key="seg.id">
+                <path
+                  v-if="theme === 'midCenturyModern'"
+                  :d="wavyPathD(seg)"
+                  fill="none"
+                  :class="['connection', seg.orientation]"
+                  stroke-linecap="round"
+                />
+                <line
+                  v-else
+                  :x1="seg.x1"
+                  :y1="seg.y1"
+                  :x2="seg.x2"
+                  :y2="seg.y2"
+                  :class="['connection', seg.orientation]"
+                  stroke-linecap="round"
+                />
+              </template>
             </g>
           </svg>
 
@@ -729,6 +774,21 @@ watch(zoom, () => {
   padding: 10px;
   box-sizing: border-box;
 }
+.family-tree-page.theme-minimalist {
+  background: #fff;
+}
+.family-tree-page.theme-minimalist .connection.vertical,
+.family-tree-page.theme-minimalist .connection.horizontal {
+  stroke: #000;
+}
+.family-tree-page.theme-mid-century {
+  background: #fdfbf6;
+}
+.family-tree-page.theme-mid-century .connection.vertical,
+.family-tree-page.theme-mid-century .connection.horizontal {
+  stroke: #000;
+  stroke-width: 4;
+}
 .family-map__chart {
   position: relative;
   padding: 12px;
@@ -764,7 +824,7 @@ watch(zoom, () => {
 .zoom-controls {
   /* sits alongside the page header instead of floating over the map */
   position: fixed;
-  top: 10px;
+  bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;

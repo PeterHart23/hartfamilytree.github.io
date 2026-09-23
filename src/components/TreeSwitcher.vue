@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { isAdmin } from '../store/adminAuth'
 import { trees, createTree } from '../store/treeStore'
+import { theme } from '../store/themeStore'
 
 const props = defineProps({
   currentTreeId: {
@@ -57,11 +58,11 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
 <template>
   <div class="tree-switcher" ref="rootRef">
     <button type="button" class="tree-switcher__trigger" @click="toggle">
-      <span class="eyebrow">{{ currentName }}</span>
+      <span class="eyebrow" :class="{ 'eyebrow--minimal': theme === 'minimalist', 'eyebrow--midcentury': theme === 'midCenturyModern' }">{{ currentName }}</span>
       <span class="tree-switcher__caret" :class="{ open }">▾</span>
     </button>
 
-    <div v-if="open" class="tree-switcher__panel">
+    <div v-if="open" class="tree-switcher__panel" :class="{ 'tree-switcher__panel--minimal': theme === 'minimalist', 'tree-switcher__panel--midcentury': theme === 'midCenturyModern' }">
       <button
         v-for="tree in trees"
         :key="tree.id"
@@ -106,6 +107,15 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
   font-size: 1.4rem;
   font-family: 'Cinzel Decorative', fantasy, serif;
 }
+.eyebrow--minimal {
+  color: #000;
+  font-family: Arial, sans-serif;
+}
+.eyebrow--midcentury {
+  color: #b1502c;
+  font-family: 'Josefin Sans', sans-serif;
+  letter-spacing: 0.1em;
+}
 .tree-switcher__caret {
   color: brown;
   font-size: 1rem;
@@ -147,6 +157,12 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
 .tree-switcher__item.active {
   font-weight: 700;
   color: #b45309;
+}
+.tree-switcher__panel--midcentury .tree-switcher__item {
+  font-family: 'Josefin Sans', sans-serif;
+}
+.tree-switcher__panel--minimal .tree-switcher__item {
+  font-family: Arial, sans-serif;
 }
 .tree-switcher__create {
   border-top: 1px solid #e5e7eb;
