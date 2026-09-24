@@ -1,9 +1,19 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { isAdmin, logout } from '../store/adminAuth'
 import { theme, THEMES, setTheme } from '../store/themeStore'
-import adminIcon from '../assets/GondorTree.jpg'
+import middleEarthIcon from '../assets/GondorTree.jpg'
+import midCenturyModernIcon from '../assets/mcmTree.png'
+import minimalistIcon from '../assets/simpleTree.png'
 import SignInModal from './SignInModal.vue'
+
+const ADMIN_ICONS = {
+  middleEarth: middleEarthIcon,
+  midCenturyModern: midCenturyModernIcon,
+  minimalist: minimalistIcon
+}
+
+const adminIcon = computed(() => ADMIN_ICONS[theme.value] ?? middleEarthIcon)
 
 const rootRef = ref(null)
 const panelOpen = ref(false)
@@ -49,6 +59,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
     <button
       type="button"
       class="admin-bar__trigger"
+      :class="`admin-bar__trigger--${theme}`"
       title="Menu"
       @click="togglePanel"
     >
@@ -107,6 +118,9 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
 }
 .admin-bar__trigger:hover {
   border-color: #9ca3af;
+}
+.admin-bar__trigger--midCenturyModern {
+  background: #f3f2e1;
 }
 .admin-bar__panel {
   position: absolute;

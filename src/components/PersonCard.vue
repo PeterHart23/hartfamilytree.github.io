@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { isAdmin } from '../store/adminAuth'
+import { theme } from '../store/themeStore'
 import unknownAvatar from '../assets/unknown.webp'
 
 const props = defineProps({
@@ -20,7 +21,14 @@ const isSelected = computed(() => props.person.id === props.selectedId)
 </script>
 
 <template>
-  <div class="person-card" :class="{ selected: isSelected }">
+  <div
+    class="person-card"
+    :class="{
+      selected: isSelected,
+      'person-card--minimal': theme === 'minimalist',
+      'person-card--midcentury': theme === 'midCenturyModern'
+    }"
+  >
     <button class="person-card__close" @click="$emit('close')">×</button>
     <div class="person-card__header">
       <div class="person-card__avatar">
@@ -153,5 +161,52 @@ const isSelected = computed(() => props.person.id === props.selectedId)
 }
 .person-card__edit:hover{
   border-color:#166534;
+}
+
+.person-card--minimal{
+  border-radius:0;
+  font-family:Arial, sans-serif;
+}
+.person-card--minimal.selected{
+  background:#fff;
+  border-color:#000;
+  color:#000;
+}
+.person-card--minimal .person-card__title span{
+  color:#374151;
+}
+.person-card--minimal .person-card__close{
+  color:#000;
+}
+.person-card--minimal .person-card__notes{
+  color:#000;
+}
+
+.person-card--midcentury{
+  background:#fdfbf6;
+  border-color:#b1502c;
+  border-radius:28px;
+  font-family:'Josefin Sans', sans-serif;
+}
+.person-card--midcentury.selected{
+  background:#fdfbf6;
+  border-color:#b1502c;
+}
+.person-card--midcentury .person-card__title h2{
+  color:#2b2320;
+  font-family:'Josefin Sans', sans-serif;
+}
+.person-card--midcentury .person-card__title span,
+.person-card--midcentury .person-card__notes{
+  color:#5c4f45;
+}
+.person-card--midcentury .person-card__close{
+  color:#2b2320;
+}
+.person-card--midcentury .person-card__admin-actions{
+  border-top-color:#e4ddce;
+}
+.person-card--midcentury .person-card__admin-actions button{
+  border-radius:14px;
 }
 </style>
