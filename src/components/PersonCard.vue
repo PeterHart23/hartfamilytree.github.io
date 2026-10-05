@@ -172,8 +172,8 @@ const isSelected = computed(() => props.person.id === props.selectedId)
   border-color:#000;
   color:#000;
 }
-.person-card--minimal .person-card__title span{
-  color:#374151;
+.person-card--minimal .person-card__title h2{
+  color:#000000;
 }
 .person-card--minimal .person-card__close{
   color:#000;

@@ -84,11 +84,13 @@ function dedupeById(list) {
   return list.filter(item => (seen.has(item.id) ? false : seen.add(item.id)))
 }
 
-// Build a proper tree: each node represents a couple/single (or a cluster of
-// partners, all shown in the same row) with their own children nested
-// beneath them. `processed` is shared across every recursive call so a
-// person already placed in one group (e.g. an in-law claimed by their
-// blood-relative spouse's branch) never spawns a duplicate branch elsewhere.
+// Build a proper tree: each node is a row of "wings" — a wing is a single
+// partner (or, for a plain couple, both partners together) plus their own
+// kids nested directly beneath, so each partner's descendants are centered
+// under that partner specifically instead of under the whole cluster row.
+// `processed` is shared across every recursive call so a person already
+// placed in one group (e.g. an in-law claimed by their blood-relative
+// spouse's branch) never spawns a duplicate branch elsewhere.
 function buildGroups(memberIds, processed) {
   const groups = []
 
@@ -101,35 +103,61 @@ function buildGroups(memberIds, processed) {
     clusterIds.forEach(cid => processed.add(cid))
     const clusterMembers = clusterIds.map(cid => membersById.value[cid])
 
-    // With 3+ partners, sandwich the shared hub between them instead of
-    // sorting everyone alphabetically — otherwise the hub can end up off to
-    // one side, and the connector line to the far partner visually cuts
-    // through the near partner's card, making it look like the two partners
-    // are paired with each other instead of with the shared hub.
-    let parents
+    const makeWing = (key, parents, kids) => ({
+      key,
+      parents,
+      childGroups: kids.length ? buildGroups(kids.map(m => m.id), processed) : []
+    })
+
+    let wings
     if (clusterMembers.length <= 2) {
-      parents = clusterIds.slice().sort().map(cid => membersById.value[cid])
+      // A plain couple (or single person): one wing holding both cards with
+      // their shared kids centered beneath, same as before.
+      const parents = clusterIds.slice().sort().map(cid => membersById.value[cid])
+      const kids = dedupeById(clusterIds.flatMap(cid => childrenMap.value[cid] || []))
+        .sort((a, b) => birthTimestamp(a) - birthTimestamp(b))
+      wings = [makeWing(clusterIds.slice().sort().join('::'), parents, kids)]
     } else {
+      // With 3+ partners, sandwich the shared hub between them instead of
+      // sorting everyone alphabetically — otherwise the hub can end up off
+      // to one side, and the spouse line to the far partner visually cuts
+      // through the near partner's card, making it look like the two
+      // partners are paired with each other instead of with the shared hub.
       const hub = clusterMembers.reduce((best, m) => (m.spouseIds.length > best.spouseIds.length ? m : best))
       const others = clusterMembers.filter(m => m.id !== hub.id).sort((a, b) => (a.id < b.id ? -1 : 1))
       const mid = Math.ceil(others.length / 2)
-      parents = [...others.slice(0, mid), hub, ...others.slice(mid)]
-    }
+      const leftOthers = others.slice(0, mid)
+      const rightOthers = others.slice(mid)
 
-    const childMembers = dedupeById(clusterIds.flatMap(cid => childrenMap.value[cid] || []))
-      .sort((a, b) => birthTimestamp(a) - birthTimestamp(b))
-    const childIds = childMembers.map(child => child.id)
-    const childGroups = childIds.length ? buildGroups(childIds, processed) : []
+      const wingForOther = other => {
+        const kids = dedupeById(childrenMap.value[other.id] || [])
+          .sort((a, b) => birthTimestamp(a) - birthTimestamp(b))
+        return makeWing(`${hub.id}::${other.id}`, [other], kids)
+      }
+
+      // Kids with only the hub recorded as a parent (no specific partner on
+      // record) belong to neither side — give the hub its own wing so they
+      // render in the middle, directly under the hub.
+      const hubOnlyKids = dedupeById(childrenMap.value[hub.id] || [])
+        .filter(child => child.parentIds.every(pid => pid === hub.id || !clusterIds.includes(pid)))
+        .sort((a, b) => birthTimestamp(a) - birthTimestamp(b))
+
+      wings = [
+        ...leftOthers.map(wingForOther),
+        makeWing(`${hub.id}::only`, [hub], hubOnlyKids),
+        ...rightOthers.map(wingForOther)
+      ]
+    }
 
     groups.push({
       key: clusterIds.slice().sort().join('::'),
-      parents,
-      childGroups
+      wings
     })
   })
 
   return groups
 }
+
 
 const familyTree = computed(() => buildGroups(rootMembers.value.map(m => m.id), new Set()))
 
@@ -219,7 +247,7 @@ async function handleModalSubmit(payload) {
 const zoom = ref(1)
 const panX = ref(0)
 const panY = ref(0)
-const MIN_ZOOM = 0.4
+const MIN_ZOOM = 0.2
 const MAX_ZOOM = 2
 
 function zoomIn() {

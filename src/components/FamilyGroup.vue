@@ -61,51 +61,66 @@ const hideAvatar = computed(() => theme.value === 'minimalist')
 
 <template>
   <div class="parent-group">
-    <div class="parents-row">
-      <div
-        v-for="parent in group.parents"
-        :key="parent.id"
-        class="family-node"
-        :data-id="parent.id"
-        :class="{
-          active: parent.id === selectedId,
-          'family-node--minimal': theme === 'minimalist',
-          'family-node--midcentury': theme === 'midCenturyModern'
-        }"
-        :style="theme === 'midCenturyModern' ? { background: mcColorFor(parent.id).bg } : null"
-        @click="$emit('select', parent)">
-        <img
-          v-if="!hideAvatar"
-          class="node-avatar"
-          :class="theme === 'midCenturyModern' ? mcAvatarPushClass(parent.id) : null"
-          :src="parent.image || unknownAvatar"
-          :alt="parent.name + ' avatar'"
-        />
-        <div
-          class="node-text"
-          :class="theme === 'midCenturyModern' ? mcCornerFor(parent.id) : null"
-          :style="theme === 'midCenturyModern' ? { color: mcColorFor(parent.id).text, background: mcColorFor(parent.id).overlay } : null"
-        >
-          <span class="node-name">{{ parent.name }}</span>
-          <span v-if="theme !== 'minimalist'" class="node-birth">{{ parent.birth }}</span>
+    <div class="wings-row">
+      <div v-for="wing in group.wings" :key="wing.key" class="wing">
+        <div class="parents-row">
+          <div
+            v-for="parent in wing.parents"
+            :key="parent.id"
+            class="family-node"
+            :data-id="parent.id"
+            :class="{
+              active: parent.id === selectedId,
+              'family-node--minimal': theme === 'minimalist',
+              'family-node--midcentury': theme === 'midCenturyModern'
+            }"
+            :style="theme === 'midCenturyModern' ? { background: mcColorFor(parent.id).bg } : null"
+            @click="$emit('select', parent)">
+            <img
+              v-if="!hideAvatar"
+              class="node-avatar"
+              :class="theme === 'midCenturyModern' ? mcAvatarPushClass(parent.id) : null"
+              :src="parent.image || unknownAvatar"
+              :alt="parent.name + ' avatar'"
+            />
+            <div
+              class="node-text"
+              :class="theme === 'midCenturyModern' ? mcCornerFor(parent.id) : null"
+              :style="theme === 'midCenturyModern' ? { color: mcColorFor(parent.id).text, background: mcColorFor(parent.id).overlay } : null"
+            >
+              <span class="node-name">{{ parent.name }}</span>
+              <span v-if="theme !== 'minimalist'" class="node-birth">{{ parent.birth }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="wing.childGroups.length > 0" class="children-row">
+          <FamilyGroup
+            v-for="childGroup in wing.childGroups"
+            :key="childGroup.key"
+            :group="childGroup"
+            :selected-id="selectedId"
+            @select="$emit('select', $event)"
+          />
         </div>
       </div>
-    </div>
-
-    <div v-if="group.childGroups.length > 0" class="children-row">
-      <FamilyGroup
-        v-for="childGroup in group.childGroups"
-        :key="childGroup.key"
-        :group="childGroup"
-        :selected-id="selectedId"
-        @select="$emit('select', $event)"
-      />
     </div>
   </div>
 </template>
 
 <style scoped>
 .parent-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.wings-row {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 32px;
+}
+.wing {
   display: flex;
   flex-direction: column;
   align-items: center;
