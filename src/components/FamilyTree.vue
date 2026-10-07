@@ -650,7 +650,7 @@ function centerRootHorizontally() {
   const chart = chartRef.value
   const layer = zoomLayerRef.value
   if (!chart || !layer) return
-  const rows = layer.querySelectorAll('.tree-root > .parent-group > .parents-row')
+  const rows = layer.querySelectorAll('.tree-root > .parent-group .parents-row')
   if (!rows.length) return
 
   const chartRect = chart.getBoundingClientRect()
