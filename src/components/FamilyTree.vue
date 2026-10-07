@@ -964,7 +964,8 @@ watch(zoom, () => {
   }
 }
 .page-header {
-  position: absolute;
+  /* pin to the viewport itself so scrolling the (potentially tall) tree never carries it off-screen */
+  position: fixed;
   /* an ancestor's own padding doesn't inset its absolutely positioned children, so match the page padding explicitly here */
   top: 10px;
   left: 10px;
